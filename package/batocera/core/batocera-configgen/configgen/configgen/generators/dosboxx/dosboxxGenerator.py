@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import shutil
-from pathlib import Path
 from typing import TYPE_CHECKING, Final
 
 from ... import Command
@@ -19,8 +18,7 @@ class DosBoxxGenerator(Generator):
 
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
         # Find rom path
-        gameDir = Path(rom)
-        gameConfFile = gameDir / "dosbox.cfg"
+        gameConfFile = rom / "dosbox.cfg"
 
         configFile = _CONFIG
         if gameConfFile.is_file():
@@ -47,12 +45,30 @@ class DosBoxxGenerator(Generator):
 
         # -fullscreen removed as it crashes on N2
         commandArray = ['/usr/bin/dosbox-x',
-                        "-exit",
-                        "-c", f"""mount c {gameDir!s}""",
+                        "-exit"]
+
+        # Find autoexe file
+        autoexecFile = rom / "dosbox.aut"
+        if autoexecFile.exists():
+            # Read dosbox.aut and append it to the custom config file
+            with customConfFile.open('a+') as f1:
+                f1.write(autoexecFile.read_text())
+
+            # Setting the defaultdir to the rom dir.
+            # This way we can use relative paths to the rom directory
+            # in dosbox.auto
+            commandArray.extend([
+                        "-defaultdir", f"""{rom!s}"""])
+        else:
+            # Otherwise, mount the rom directory as c: and run dosbox.bat
+            commandArray.extend([
+                        "-c", f"""mount c {rom!s}""",
                         "-c", "c:",
-                        "-c", "dosbox.bat",
+                        "-c", "dosbox.bat"])
+
+        commandArray.extend([
                         "-fastbioslogo",
-                        f"-conf {customConfFile!s}"]
+                        "-conf", f"{customConfFile!s}"])
 
         return Command.Command(array=commandArray, env={"XDG_CONFIG_HOME":CONFIGS})
 

@@ -3,10 +3,12 @@
 # libretro-atari800
 #
 ################################################################################
-# Version: Commits on Jul 26, 2024
-LIBRETRO_ATARI800_VERSION = 50141a6bf1a069abd86dd8c53aa4031f3f7cfbd1
+# Version: Commits on Dec 4, 2025
+LIBRETRO_ATARI800_VERSION = 630f2346a1dabefdcf534880a48e3e200e2cc551
 LIBRETRO_ATARI800_SITE = $(call github,libretro,libretro-atari800,$(LIBRETRO_ATARI800_VERSION))
 LIBRETRO_ATARI800_LICENSE = GPL
+LIBRETRO_ATARI800_DEPENDENCIES += retroarch
+LIBRETRO_ATARI800_EMULATOR_INFO = atari800.libretro.core.yml
 
 LIBRETRO_ATARI800_PLATFORM = $(LIBRETRO_PLATFORM)
 
@@ -39,3 +41,4 @@ define LIBRETRO_ATARI800_INSTALL_TARGET_CMDS
 endef
 
 $(eval $(generic-package))
+$(eval $(emulator-info-package))

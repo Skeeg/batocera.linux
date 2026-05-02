@@ -9,6 +9,8 @@ LIBRETRO_VIRCON32_SITE = https://github.com/vircon32/vircon32-libretro
 LIBRETRO_VIRCON32_SITE_METHOD = git
 LIBRETRO_VIRCON32_GIT_SUBMODULES = YES
 LIBRETRO_VIRCON32_LICENSE = 3-Clause BSD
+LIBRETRO_VIRCON32_DEPENDENCIES += retroarch
+LIBRETRO_VIRCON32_EMULATOR_INFO = vircon32.libretro.core.yml
 
 ifeq ($(BR2_PACKAGE_BATOCERA_TARGET_X86_64_ANY),y)
     LIBRETRO_VIRCON32_DEPENDENCIES += libgl
@@ -28,3 +30,4 @@ define LIBRETRO_VIRCON32_INSTALL_TARGET_CMDS
 endef
 
 $(eval $(cmake-package))
+$(eval $(emulator-info-package))

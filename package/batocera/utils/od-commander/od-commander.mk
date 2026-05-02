@@ -8,6 +8,7 @@ OD_COMMANDER_VERSION = 079a84c8a8cc25e1899cb11bcfce8e9e2ed9fca9
 OD_COMMANDER_SITE = $(call github,od-contrib,commander,$(OD_COMMANDER_VERSION))
 OD_COMMANDER_DEPENDENCIES = sdl2 sdl2_gfx sdl2_image sdl2_ttf dejavu nanum-font
 OD_COMMANDER_RESOURCES_DIR = /usr/share/od-commander/
+OD_COMMANDER_EMULATOR_INFO = odcommander.emulator.yml
 
 OD_COMMANDER_CONF_OPTS += \
 	-DWITH_SYSTEM_SDL_GFX=ON -DWITH_SYSTEM_SDL_TTF=ON \
@@ -59,9 +60,7 @@ define OD_COMMANDER_INSTALL_TARGET_CMDS
 	  $(TARGET_DIR)$(OD_COMMANDER_RESOURCES_DIR)
 	$(INSTALL) -m 0755 -D $(OD_COMMANDER_BUILDDIR)commander \
 	  $(TARGET_DIR)/usr/bin/od-commander
-	mkdir -p $(TARGET_DIR)/usr/share/evmapy/
-	 cp -f $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/od-commander/odcommander.keys \
-	  $(TARGET_DIR)/usr/share/evmapy/
 endef
 
 $(eval $(cmake-package))
+$(eval $(emulator-info-package))

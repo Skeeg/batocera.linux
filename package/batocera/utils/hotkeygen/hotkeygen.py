@@ -12,6 +12,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, TypedDict
+import errno
 
 import evdev
 import pyudev
@@ -84,7 +85,6 @@ def get_context() -> HotkeysContext | None:
             with GCONTEXT_FILE.open() as file:
                 data = json.load(file)
                 context = load_context(data)
-                context["keys"] |= get_common_context_keys()
                 return context
         except Exception as e:
             print(f"fail to load context file : {e}")
@@ -171,7 +171,10 @@ def get_mapping_full_path(device: evdev.InputDevice) -> Path | None:
     return fullpath
 
 def get_mapping(device: evdev.InputDevice) -> dict[int, str]:
-    fullpath = get_mapping_full_path(device)
+    if device is None:
+        fullpath = None
+    else:
+        fullpath = get_mapping_full_path(device)
 
     if fullpath is not None:
         if gdebug:
@@ -183,9 +186,13 @@ def get_mapping(device: evdev.InputDevice) -> dict[int, str]:
         data = {}
         userdata = {}
         if GDEFAULTMAPPING_FILE.exists():
+            if gdebug:
+                print(f"use default mapping file {GDEFAULTMAPPING_FILE}")
             with GDEFAULTMAPPING_FILE.open() as fd:
                 data = json.load(fd)
         if GUSERDEFAULTMAPPING_FILE.exists():
+            if gdebug:
+                print(f"use user mapping file {GUSERDEFAULTMAPPING_FILE}")
             with GUSERDEFAULTMAPPING_FILE.open() as fd:
                 userdata = json.load(fd)
 
@@ -204,7 +211,7 @@ def load_mapping(data: dict[str, str]) -> dict[int, str]:
         print(f"fail to load mapping : {e}")
         return {}
 
-def get_mapping_associations(mapping: Mapping[int, str], caps: dict[int, list[int | tuple[int, evdev.AbsInfo]]]):
+def get_mapping_associations(mapping: Mapping[int, str], caps: evdev._CapabilitiesWithAbsInfo):
     capskeys = set(caps[ecodes.EV_KEY])
     return {key: value for key, value in mapping.items() if key in capskeys}
 
@@ -223,7 +230,7 @@ def print_mapping(
                         print(
                             f"  {ECODES_NAMES[k]:-<15}-> {associations[k]:-<15}-> {key_names}"
                         )
-                    if isinstance(key_codes, str):
+                    elif isinstance(key_codes, str):
                         print(f"  {ECODES_NAMES[k]:-<15}-> {associations[k]:-<15}-> {key_codes}")
                     else:
                         print(f"  {ECODES_NAMES[k]:-<15}-> {associations[k]:-<15}-> {ECODES_NAMES[key_codes]}")
@@ -231,53 +238,91 @@ def print_mapping(
                     print(f"  {ECODES_NAMES[k]:-<15}-> {associations[k]:15}")
 
 
-def send_keys(target: evdev.UInput, keys: int | list[int] | str) -> None:
+def send_keys(target: evdev.UInput, keys: int | list[int] | str, begin: bool) -> None:
+    if begin:
+        n = 1
+    else:
+        n = 0
+
     if isinstance(keys, list):
         for x in keys:
-            target.write(ecodes.EV_KEY, x, 1)
-            target.syn()
-        # time required for emulators (like mame) based on states and not on events
-        # (if you go too fast, the event is not seen)
-        time.sleep(0.1)
-        for x in keys:
-            target.write(ecodes.EV_KEY, x, 0)
+            if gdebug:
+               print(f"sending EV_KEY {x} {n}")
+            target.write(ecodes.EV_KEY, x, n)
             target.syn()
     else:
-        target.write(ecodes.EV_KEY, keys, 1)
-        target.syn()
-        # time required for emulators (like mame) based on states and not on events
-        # (if you go too fast, the event is not seen)
-        time.sleep(0.1)
-        target.write(ecodes.EV_KEY, keys, 0)
+        if gdebug:
+            print(f"sending EV_KEY {keys} {n}")
+        target.write(ecodes.EV_KEY, keys, n)
         target.syn()
 
-def do_send(key: str) -> None:
-    context = get_context()
-    sender_keys: list[int] = []
-    if context is not None and key in context["keys"]:
-        keys = context["keys"][key]
-        if isinstance(keys, str):
-            os.system(keys)
+def do_send(key: str, delay: None | int) -> None:
+    if gdebug:
+        if delay:
+            print(f"Sending {key} with delay {delay}")
         else:
-            if isinstance(keys, list):
-                sender_keys.extend(keys)
+            print(f"Sending {key}")
+
+    mapping = get_mapping(None)
+    for code in mapping:
+        if mapping[code] == key:
+            if gdebug:
+                print(f"sending {key}")
+            sender = evdev.UInput(name="virtual keyboard", events={ ecodes.EV_KEY: [code] })
+            time.sleep(0.1) # need some time to initialize... (otherwise the first events are ignored the time add is taken)
+            send_keys(sender, code, True)
+            # time required for emulators (like mame) based on states and not on events
+            # (if you go too fast, the event is not seen)
+            if delay:
+                time.sleep(delay)
             else:
-                sender_keys.append(keys)
-            sender = evdev.UInput(name="virtual keyboard", events={ ecodes.EV_KEY: sender_keys })
-            send_keys(sender, sender_keys)
-    else:
-        print(f"unknown action {key}")
+                time.sleep(0.3) # some emulators (ra, mame) needs some time otherwise they don't see the touch was pressed
+            send_keys(sender, code, False)
+
+def send_reset_signal(target_device: evdev.UInput) -> None:
+    target_device.write(ecodes.EV_REL, ecodes.REL_X, -10000)
+    target_device.write(ecodes.EV_REL, ecodes.REL_Y, -10000)
+    target_device.syn()
+
+    time.sleep(0.10)
+
+    # Only send mouse click on Wayland (unsafe on X11)
+    if os.environ.get("WAYLAND_DISPLAY"):
+        target_device.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 1)
+        target_device.syn()
+        target_device.write(ecodes.EV_KEY, ecodes.BTN_LEFT, 0)
+        target_device.syn()
+
+        time.sleep(0.10)
+
+def do_reset_mouse() -> None:
+    # Create temporary device
+    sender = evdev.UInput(
+        name="batocera-mouse-reset", 
+        events={
+            ecodes.EV_REL: [ecodes.REL_X, ecodes.REL_Y],
+            ecodes.EV_KEY: [ecodes.BTN_LEFT]
+        }
+    )
+    time.sleep(0.2)
+
+    send_reset_signal(sender)
+
+    sender.close()
 
 def read_pid() -> str:
     with GPID_FILE.open() as fd:
         return fd.read().replace('\n', '')
 
-def do_new_context(context_name: str | None = None, context_json: str | None = None) -> None:
+def do_new_context(context_name: str | None = None, context_json: str | None = None, include_common:bool = True) -> None:
     if context_name is not None and context_json is not None:
         context = load_context({
             'name': context_name,
             'keys': json.loads(context_json)
         })
+        if include_common:
+            context["keys"] |= get_common_context_keys()
+
         # update the config file
         save_context(context, GCONTEXT_FILE)
     else:
@@ -288,6 +333,10 @@ def do_new_context(context_name: str | None = None, context_json: str | None = N
     pid = int(read_pid())
     os.kill(pid, signal.SIGHUP)
 
+def do_reload_devices_config():
+    # inform the process
+    pid = int(read_pid())
+    os.kill(pid, signal.SIGHUP)
 
 def do_list() -> None:
     context = get_context()
@@ -328,6 +377,7 @@ class Daemon:
     monitor: pyudev.Monitor = field(init=False)
     poll: select.poll = field(init=False)
     target: evdev.UInput = field(init=False)
+    require_reconfig: bool = field(init=False, default=False)
 
     def __post_init__(self) -> None:
         self.udev_context = pyudev.Context()
@@ -336,9 +386,15 @@ class Daemon:
 
         self.poll = select.poll()
 
-        # target virtual keyboard
+        keys_list = [x for x in range(ecodes.KEY_MAX) if x in ECODES_NAMES and ECODES_NAMES[x][:4] == "KEY_"]
+        keys_list.append(ecodes.BTN_LEFT)
+
+        # target virtual keyboard & mouse
         self.target = evdev.UInput(
-            name=DEVICE_NAME, events={ ecodes.EV_KEY: [x for x in range(ecodes.KEY_MAX) if x in ECODES_NAMES and ECODES_NAMES[x][:4] == "KEY_" ] }
+            name=DEVICE_NAME, events={
+                ecodes.EV_KEY: keys_list,
+                ecodes.EV_REL: [ecodes.REL_X, ecodes.REL_Y]
+            }
         )
 
     def __handle_actions(self, action: str, device: pyudev.Device) -> None:
@@ -357,7 +413,6 @@ class Daemon:
                             if gdebug:
                                 print(f"Adding device {device.device_node}: {input_device.name}")
                                 print_mapping(mapping, associations)
-
                             self.input_devices[device.device_node] = input_device
                             self.input_devices_by_fd[input_device.fileno()] = input_device
                             self.mappings_by_fd[input_device.fileno()] = mapping
@@ -374,15 +429,25 @@ class Daemon:
                     del self.input_devices_by_fd[input_device.fileno()]
                     del self.input_devices[device.device_node]
 
-    def __handle_event(self, event: evdev.InputEvent, action: str) -> None:
+    def __handle_event(self, event: evdev.InputEvent, action: str, begin: bool) -> None:
         if self.context is not None and action in self.context["keys"]:
             keys = self.context["keys"][action]
+
+            if action == "exit" and ((isinstance(keys, str) and not begin) or (not isinstance(keys, str) and begin)):
+                send_reset_signal(self.target)
+
             if gdebug:
                 print(f"code:{event.code}, value:{event.value}, action:{action}")
-            if isinstance(keys, str):
-                os.system(keys)
+            if begin:
+                if isinstance(keys, str):
+                    pass # nothing on keydown
+                else:
+                    send_keys(self.target, keys, True)
             else:
-                send_keys(self.target, keys)
+                if isinstance(keys, str):
+                    os.system(keys)
+                else:
+                    send_keys(self.target, keys, False)
 
     def __write_pid(self) -> None:
         with GPID_FILE.open("w") as fd:
@@ -390,6 +455,19 @@ class Daemon:
 
     def __handle_sighup(self, signum: int, frame: FrameType | None) -> None:
         self.context = get_context()
+        self.require_reconfig = True # done outside of the event cause, to make it safely
+
+    def __reload_devices_configs(self) -> None:
+        # reload config files for devices
+        for fd in self.input_devices_by_fd:
+            input_device = self.input_devices_by_fd[fd]
+            mapping = get_mapping(input_device)
+            self.mappings_by_fd[fd] = mapping
+
+        # try to load a device that had not configuration file before
+        for device in self.udev_context.list_devices(subsystem='input'):
+            if device.device_node not in self.input_devices:
+                self.__handle_actions('add', device)
 
     def run(self) -> None:
         if self.running:
@@ -415,7 +493,11 @@ class Daemon:
 
         # read all devices
         while True:
-            for fd, _ in self.poll.poll():
+            if self.require_reconfig:
+                self.require_reconfig = False
+                self.__reload_devices_configs()
+
+            for fd, _ in self.poll.poll(1000):
                 try:
                     if fd == self.monitor.fileno():
                         (action, device) = self.monitor.receive_device()
@@ -425,45 +507,63 @@ class Daemon:
                         if (
                             event is not None and
                             event.type == ecodes.EV_KEY and
-                            event.value == 0 and  # limit to key down
                             event.code in self.mappings_by_fd[fd]
                         ):
-                            self.__handle_event(event, self.mappings_by_fd[fd][event.code])
-                except (OSError):
+                            if event.value == 1:
+                                self.__handle_event(event, self.mappings_by_fd[fd][event.code], True)
+                            elif event.value == 0:
+                                self.__handle_event(event, self.mappings_by_fd[fd][event.code], False)
+                #except (OSError, KeyError, FileNotFoundError) as e:
+                except (Exception) as e:
                     if fd == self.monitor.fileno():
-                        raise
+                        print("Exception happened on the monitor fd")
+                        print(e)
+                        #raise
                     else:
                         # error on a single device
-                        input_device = self.input_devices_by_fd[fd]
-                        print(f"error on device {input_device.name} ({input_device.path}), closing.")
-                        self.poll.unregister(input_device)
-                        del self.mappings_by_fd[fd]
-                        del self.input_devices_by_fd[fd]
-                        del self.input_devices[input_device.path]
-                        input_device.close()
-                except:
-                    self.target.close()
-                    raise
+                        if fd in self.input_devices_by_fd:
+                            input_device = self.input_devices_by_fd[fd]
+                            if not (isinstance(e, OSError) and e.errno == errno.ENODEV):
+                                print(e)
+                                print(f"error on device {input_device.name} ({input_device.path}), closing.")
+                            del self.mappings_by_fd[fd]
+                            del self.input_devices_by_fd[fd]
+                            del self.input_devices[input_device.path]
+                            try:
+                                self.poll.unregister(input_device)
+                                input_device.close()
+                            except:
+                                pass
+        # never happening, but should be done to quit
+        self.target.close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(prog="hotkeygen")
     parser.add_argument("--debug", action="store_true")
     parser.add_argument("--list", action="store_true")
     parser.add_argument("--send")
+    parser.add_argument("--send-delay", type=int)
     parser.add_argument("--default-context", action="store_true")
     parser.add_argument("--new-context", nargs=2, metavar=("new-context-name", "new-context-json"))
+    parser.add_argument("--disable-common", action="store_true")
+    parser.add_argument("--reload", action="store_true")
     parser.add_argument("--permanent", action="store_true")
+    parser.add_argument("--reset-mouse", action="store_true")
     args = parser.parse_args()
     if args.debug:
         gdebug = True
 
     if args.list:
         do_list()
+    elif args.reset_mouse:
+        do_reset_mouse()
     elif args.send is not None:
-        do_send(args.send)
+        do_send(args.send, args.send_delay)
     elif args.new_context is not None:
         new_context_name, new_context_json = args.new_context
-        do_new_context(new_context_name, new_context_json)
+        do_new_context(new_context_name, new_context_json, not args.disable_common)
+    elif args.reload:
+        do_reload_devices_config()
     elif args.default_context:
         do_new_context()
     else:

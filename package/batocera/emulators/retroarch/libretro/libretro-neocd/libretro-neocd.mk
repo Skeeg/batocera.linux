@@ -10,6 +10,8 @@ LIBRETRO_NEOCD_SITE = https://github.com/libretro/neocd_libretro.git
 LIBRETRO_NEOCD_SITE_METHOD=git
 LIBRETRO_NEOCD_GIT_SUBMODULES=YES
 LIBRETRO_NEOCD_LICENSE = GPLv3
+LIBRETRO_NEOCD_DEPENDENCIES = retroarch
+LIBRETRO_NEOCD_EMULATOR_INFO = neocd.libretro.core.yml
 
 LIBRETRO_NEOCD_PLATFORM = $(LIBRETRO_PLATFORM)
 
@@ -37,3 +39,4 @@ define LIBRETRO_NEOCD_INSTALL_TARGET_CMDS
 endef
 
 $(eval $(generic-package))
+$(eval $(emulator-info-package))

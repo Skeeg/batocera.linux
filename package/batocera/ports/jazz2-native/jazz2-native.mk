@@ -4,14 +4,15 @@
 #
 ################################################################################
 
-JAZZ2_NATIVE_VERSION = 3.0.0
+JAZZ2_NATIVE_VERSION = 3.5.0
 JAZZ2_NATIVE_SITE = https://github.com/deathkiller/jazz2-native.git
 JAZZ2_NATIVE_SITE_METHOD = git
 JAZZ2_NATIVE_GIT_SUBMODULES = YES
 JAZZ2_NATIVE_LICENSE = GPL-3.0
 JAZZ2_NATIVE_LICENSE_FILE = LICENSE
+JAZZ2_NATIVE_EMULATOR_INFO = jazz2-native.emulator.yml
 
-JAZZ2_NATIVE_DEPENDENCIES += sdl2 openal libopenmpt zlib
+JAZZ2_NATIVE_DEPENDENCIES += libcurl sdl2 openal libopenmpt zlib
 
 JAZZ2_NATIVE_SUPPORTS_IN_SOURCE_BUILD = NO
 
@@ -32,12 +33,5 @@ else ifeq ($(BR2_PACKAGE_BATOCERA_GLES3),y)
     JAZZ2_NATIVE_CONF_OPTS += -DNCINE_WITH_OPENGLES=ON
 endif
 
-define JAZZ2_NATIVE_EVMAPY
-	mkdir -p $(TARGET_DIR)/usr/share/evmapy
-	cp $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/ports/jazz2-native/jazz2.keys \
-	    $(TARGET_DIR)/usr/share/evmapy
-endef
-
-JAZZ2_NATIVE_POST_INSTALL_TARGET_HOOKS += JAZZ2_NATIVE_EVMAPY
-
 $(eval $(cmake-package))
+$(eval $(emulator-info-package))

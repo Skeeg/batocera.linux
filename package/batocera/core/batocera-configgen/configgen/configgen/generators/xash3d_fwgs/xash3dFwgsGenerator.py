@@ -15,7 +15,7 @@ if TYPE_CHECKING:
 
 
 _CONFIG_DIR: Final = CONFIGS / 'xash3d_fwgs'
-_ROMS_DIR: Final = ROMS / 'xash3d_fwgs'
+_ROMS_DIR: Final = ROMS / 'halflife'
 _SAVES_DIR: Final = SAVES / 'xash3d_fwgs'
 _HLSDK_LIBS_DIR: Final = Path('/usr/lib/xash3d/hlsdk')
 _DEFAULT_SERVER_LIB: Final = 'hl'
@@ -55,7 +55,7 @@ def _get_server_lib_basename_from_liblist_gam(game: str) -> str | None:
     return None
 
 
-def _find_server_lib(server_lib: str, arch_suffix: str) -> Path:
+def _find_server_lib(server_lib: str | None, arch_suffix: str) -> Path:
     """Finds and returns the server library.
 
     Falls back to _DEFAULT_SERVER_LIB if none is found.
@@ -68,7 +68,7 @@ def _find_server_lib(server_lib: str, arch_suffix: str) -> Path:
     return _server_lib_path(_DEFAULT_SERVER_LIB, arch_suffix)
 
 
-def _find_client_lib(server_lib: str, arch_suffix: str) -> Path:
+def _find_client_lib(server_lib: str | None, arch_suffix: str) -> Path:
     """Finds and returns the client library.
 
     Falls back to the client library for _DEFAULT_SERVER_LIB if none is found.
@@ -96,7 +96,7 @@ class Xash3dFwgsGenerator(Generator):
         }
 
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
-        game = Path(rom).stem
+        game = rom.stem
 
         arch_suffix = _get_arch_suffix()
         server_lib = _get_server_lib_basename_from_liblist_gam(game)
@@ -105,7 +105,7 @@ class Xash3dFwgsGenerator(Generator):
         # -log        # Log to /userdata/roms/xash3d_fwgs/engine.log
         # -dev 2      # Verbose logging
         # -ref gles2  # Select a specific renderer (gl, gl4es, gles1, gles2, soft)
-        commandArray = ['/usr/bin/xash3d', '-fullscreen', '-dev']
+        commandArray: list[str | Path] = ['/usr/bin/xash3d', '-fullscreen', '-dev']
 
         # By default, xash3d will use `dlls/hl.so` in the valve directory (via the `liblist.gam` config file).
         # However, that `so` is incompatible with xash3d (it's the x86-glibc version from Valve).
@@ -120,7 +120,7 @@ class Xash3dFwgsGenerator(Generator):
         commandArray.append(game)
 
         commandArray.append('+showfps')
-        commandArray.append('1' if system.getOptBoolean('showFPS') == True else '0')
+        commandArray.append('1' if system.config.show_fps else '0')
 
         self._maybeInitConfig(game)
         self._maybeInitSaveDir(game)
@@ -151,14 +151,13 @@ class Xash3dFwgsGenerator(Generator):
         if not custom_config.exists():
             with ensure_parents_and_open(custom_config, 'w') as f:
                 f.write('\n')
-            if not custom_rom_config.exists():
-                custom_rom_config.symlink_to(custom_config)
+        if not custom_rom_config.exists():
+            custom_rom_config.symlink_to(custom_config)
 
     def _maybeInitSaveDir(self, game: str) -> None:
         rom_dir = _rom_dir(game)
         rom_save_dir = rom_dir / 'save'
-        if not rom_save_dir.is_dir():
+        if not rom_save_dir.exists():
             save_dir = _save_dir(game)
             mkdir_if_not_exists(save_dir)
-            if not rom_save_dir.exists():
-                rom_save_dir.symlink_to(save_dir)
+            rom_save_dir.symlink_to(save_dir)

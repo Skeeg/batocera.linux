@@ -1,10 +1,10 @@
 ################################################################################
 #
-# batocera wine
+# batocera-wine
 #
 ################################################################################
 
-BATOCERA_WINE_VERSION = 1.2
+BATOCERA_WINE_VERSION = 1.4
 BATOCERA_WINE_LICENSE = GPL
 BATOCERA_WINE_SOURCE=
 
@@ -12,6 +12,8 @@ BATOCERA_WINE_SOURCE_PATH = \
     $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/utils/batocera-wine
 
 define BATOCERA_WINE_INSTALL_TARGET_CMDS
+	mkdir -p $(TARGET_DIR)/usr/bin
+	mkdir -p $(TARGET_DIR)/etc/X11/xorg.conf.d
 	install -m 0755 $(BATOCERA_WINE_SOURCE_PATH)/batocera-wine \
 	    $(TARGET_DIR)/usr/bin/batocera-wine
 	install -m 0755 $(BATOCERA_WINE_SOURCE_PATH)/batocera-wine-runners \

@@ -7,6 +7,7 @@
 CANNONBALL_VERSION = 27493ebf62be3498dff93ed6a45e8e2db819bae1
 CANNONBALL_SITE = $(call github,djyt,cannonball,$(CANNONBALL_VERSION))
 CANNONBALL_LICENSE = GPLv2
+CANNONBALL_EMULATOR_INFO = cannonball.emulator.yml
 CANNONBALL_DEPENDENCIES = sdl2 boost
 CANNONBALL_SUPPORTS_IN_SOURCE_BUILD = NO
 CANNONBALL_SUBDIR = cmake
@@ -54,12 +55,5 @@ define CANNONBALL_INSTALL_TARGET_CMDS
 	    $(TARGET_DIR)/usr/share/batocera/datainit/system/configs/cannonball/config_help.txt
 endef
 
-define CANNONBALL_EVMAPY
-	mkdir -p $(TARGET_DIR)/usr/share/evmapy
-	cp -prn $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/ports/cannonball/cannonball.keys \
-		$(TARGET_DIR)/usr/share/evmapy
-endef
-
-CANNONBALL_POST_INSTALL_TARGET_HOOKS = CANNONBALL_EVMAPY
-
 $(eval $(cmake-package))
+$(eval $(emulator-info-package))

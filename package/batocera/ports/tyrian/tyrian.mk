@@ -8,6 +8,7 @@ TYRIAN_VERSION = v2.1.20221123
 TYRIAN_SITE = $(call github,opentyrian,opentyrian,$(TYRIAN_VERSION))
 
 TYRIAN_DEPENDENCIES = sdl2 sdl2_net
+TYRIAN_EMULATOR_INFO = tyrian.emulator.yml
 
 define TYRIAN_BUILD_CMDS
 	# Cross-compile
@@ -23,9 +24,7 @@ endef
 
 define TYRIAN_INSTALL_TARGET_CMDS
 	$(INSTALL) -D -m 0755 $(@D)/opentyrian $(TARGET_DIR)/usr/bin/
-	# evmap config
-	mkdir -p $(TARGET_DIR)/usr/share/evmapy
-	cp $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/ports/tyrian/tyrian.keys $(TARGET_DIR)/usr/share/evmapy
 endef
 
 $(eval $(generic-package))
+$(eval $(emulator-info-package))

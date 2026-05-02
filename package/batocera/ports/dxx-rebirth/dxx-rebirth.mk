@@ -3,13 +3,14 @@
 # dxx-rebirth (Descent 1 & 2) engine
 #
 ################################################################################
-# Version: Commits on Aug 12, 2024
-DXX_REBIRTH_VERSION = bd3c033bdf1faa4606086dcae0436531fb2e7e5c
+# Version: Commits on May 25, 2025
+DXX_REBIRTH_VERSION = 7a84b3f307ac6f72fd440e55b149d7c2c942dfaf
 DXX_REBIRTH_SITE = https://github.com/dxx-rebirth/dxx-rebirth
 DXX_REBIRTH_SITE_METHOD=git
 DXX_REBIRTH_LICENSE = GPLv3
 DXX_REBIRTH_LICENSE_FILE = COPYING.txt
 DXX_REBIRTH_DEPENDENCIES = host-scons sdl2 sdl2_image sdl2_mixer libpng physfs
+DXX_REBIRTH_EMULATOR_INFO = dxx-rebirth.emulator.yml
 
 DXX_REBIRTH_LDFLAGS   = $(TARGET_LDFLAGS)
 DXX_REBIRTH_CFLAGS    = $(TARGET_CFLAGS)
@@ -19,6 +20,14 @@ DXX_REBIRTH_SCONS_ENV = $(TARGET_CONFIGURE_OPTS)
 DXX_REBIRTH_SCONS_OPTS = -j$(PARALLEL_JOBS)
 
 DXX_REBIRTH_SCONS_OPTS += sdl2=yes
+
+ifeq ($(BR2_PACKAGE_LIBGLEW),y)
+    DXX_REBIRTH_DEPENDENCIES += libglew
+endif
+
+ifeq ($(BR2_PACKAGE_LIBGLU),y)
+    DXX_REBIRTH_DEPENDENCIES += libglu
+endif
 
 define DXX_REBIRTH_BUILD_CMDS
     (cd $(@D); \
@@ -42,3 +51,4 @@ endef
 DXX_REBIRTH_POST_INSTALL_TARGET_HOOKS += DXX_REBIRTH_EVMAPY
 
 $(eval $(generic-package))
+$(eval $(emulator-info-package))

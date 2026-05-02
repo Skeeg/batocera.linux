@@ -9,6 +9,8 @@ LIBRETRO_ARDUOUS_SITE = https://github.com/libretro/arduous.git
 LIBRETRO_ARDUOUS_SITE_METHOD=git
 LIBRETRO_ARDUOUS_GIT_SUBMODULES=YES
 LIBRETRO_ARDUOUS_LICENSE = GPLv2
+LIBRETRO_ARDUOUS_DEPENDENCIES += retroarch
+LIBRETRO_ARDUOUS_EMULATOR_INFO = arduous.libretro.core.yml
 
 define LIBRETRO_ARDUOUS_INSTALL_TARGET_CMDS
     $(INSTALL) -D $(@D)/arduous_libretro.so \
@@ -16,3 +18,4 @@ define LIBRETRO_ARDUOUS_INSTALL_TARGET_CMDS
 endef
 
 $(eval $(cmake-package))
+$(eval $(emulator-info-package))

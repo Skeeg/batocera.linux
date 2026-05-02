@@ -4,6 +4,9 @@ gamecube:
 nds:
   emulator: libretro
   core:     melonds
+3ds:
+  emulator: azahar
+  core:     azahar
 wii:
   emulator: libretro
   core:     dolphin
@@ -25,3 +28,6 @@ kodi:
 cdi:
   emulator: libretro
   core:     same_cdi
+quake3:
+  emulator: vkquake3
+  core:     vkquake3

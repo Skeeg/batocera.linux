@@ -9,8 +9,9 @@ LIBRETRO_BOOM3_SITE = $(call github,libretro,boom3,$(LIBRETRO_BOOM3_VERSION))
 LIBRETRO_BOOM3_LICENSE = GPLv3
 LIBRETRO_BOOM3_LICENSE_FILES = COPYING.txt
 LIBRETRO_BOOM3_SUBDIR = neo
-
-LIBRETRO_BOOM3_DEPENDENCIES = host-libjpeg libcurl libogg libvorbis openal sdl2 zlib 
+LIBRETRO_BOOM3_DEPENDENCIES += retroarch
+LIBRETRO_BOOM3_DEPENDENCIES += host-libjpeg libcurl libogg libvorbis openal sdl2 zlib
+LIBRETRO_BOOM3_EMULATOR_INFO = boom3.libretro.core.yml
 
 LIBRETRO_BOOM3_PLATFORM = $(LIBRETRO_PLATFORM)
 
@@ -32,3 +33,4 @@ define LIBRETRO_BOOM3_INSTALL_TARGET_CMDS
 endef
 
 $(eval $(generic-package))
+$(eval $(emulator-info-package))

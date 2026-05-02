@@ -4,12 +4,13 @@
 #
 ################################################################################
 
-HATARI_VERSION = v2.5.0
+HATARI_VERSION = v2.6.1
 HATARI_SOURCE = hatari-$(HATARI_VERSION).tar.gz
 HATARI_SITE = https://github.com/hatari/hatari.git
 HATARI_SITE_METHOD=git
 HATARI_LICENSE = GPLv3
 HATARI_DEPENDENCIES = sdl2 zlib libpng libcapsimage
+HATARI_EMULATOR_INFO = hatari.emulator.yml
 
 HATARI_CONF_OPTS += -DBUILD_SHARED_LIBS=OFF
 HATARI_CONF_OPTS += -DCMAKE_BUILD_TYPE=Release
@@ -22,11 +23,9 @@ endef
 
 define HATARI_INSTALL_EVMAPY
 	mkdir -p $(TARGET_DIR)/usr/share/evmapy
-	$(INSTALL) -D -m 0644 \
-	    $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/hatari/atarist.hatari.keys \
-	        $(TARGET_DIR)/usr/share/evmapy/atarist.hatari.keys
 endef
 
 HATARI_POST_INSTALL_TARGET_HOOKS = HATARI_INSTALL_EVMAPY
 
 $(eval $(cmake-package))
+$(eval $(emulator-info-package))

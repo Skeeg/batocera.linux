@@ -9,6 +9,8 @@ LIBRETRO_FREECHAF_SITE_METHOD=git
 LIBRETRO_FREECHAF_SITE=https://github.com/libretro/FreeChaF.git
 LIBRETRO_FREECHAF_GIT_SUBMODULES=YES
 LIBRETRO_FREECHAF_LICENSE = GPLv3.0
+LIBRETRO_FREECHAF_DEPENDENCIES += retroarch
+LIBRETRO_FREECHAF_EMULATOR_INFO = freechaf.libretro.core.yml
 
 LIBRETRO_FREECHAF_PLATFORM = unix
 
@@ -35,3 +37,4 @@ define LIBRETRO_FREECHAF_INSTALL_TARGET_CMDS
 endef
 
 $(eval $(generic-package))
+$(eval $(emulator-info-package))

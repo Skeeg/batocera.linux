@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from pathlib import Path
+import os
+import re
 from typing import TYPE_CHECKING, Final
 
 from ... import Command
 from ...batoceraPaths import BIOS, CACHE, CONFIGS, SAVES, SCREENSHOTS, ensure_parents_and_open, mkdir_if_not_exists
-from ...controller import generate_sdl_game_controller_config
+from ...controller import Controller, generate_sdl_game_controller_config
 from ...utils.configparser import CaseSensitiveConfigParser
 from ..Generator import Generator
 
@@ -15,19 +16,18 @@ if TYPE_CHECKING:
 scummConfigDir: Final = CONFIGS / "scummvm"
 scummConfigFile: Final = scummConfigDir / "scummvm.ini"
 scummExtra: Final = BIOS / "scummvm" / "extra"
+scummSave: Final = SAVES / "scummvm"
 
 class ScummVMGenerator(Generator):
 
     def getHotkeysContext(self) -> HotkeysContext:
         return {
             "name": "scummvm",
-            "keys": { "exit": ["KEY_LEFTALT", "KEY_F4"] }
+            "keys": { "exit": ["KEY_LEFTALT", "KEY_F4"], "menu": ["KEY_LEFTCTRL", "KEY_F5"] }
         }
 
     def generate(self, system, rom, playersControllers, metadata, guns, wheels, gameResolution):
-        rom_path = Path(rom)
-
-        # crete /userdata/bios/scummvm/extra folder if it doesn't exist
+        # create /userdata/bios/scummvm/extra folder if it doesn't exist
         mkdir_if_not_exists(scummExtra)
 
         # create / modify scummvm config file as needed
@@ -45,60 +45,55 @@ class ScummVMGenerator(Generator):
             scummConfig.write(configfile)
 
         # Find rom path
-        if rom_path.is_dir():
-          # rom is a directory: must contains a <game name>.scummvm file
-          romPath = rom_path
-          romName = next(rom_path.glob("*.scummvm")).stem
+        # 1. If a .scummvm file exists and contains a valid <game id>, use the <game id>
+        # 2. If an empty <game id>.scummvm file exists, use the <game id>
+        # 3. Otherwise, auto detect the game
+
+        if rom.is_dir():
+            # squashfs: find a <game name>.scummvm file
+            rom_file = next(rom.glob("*.scummvm"), None)
+            rom_path = rom
         else:
-          # rom is a file: split in directory and file name
-          romPath = rom_path.parent
-          # Get rom name without extension
-          romName = rom_path.stem
+            # .scummvm: use rom as file
+            rom_file = rom
+            rom_path = rom.parent
+
+        target = "--auto-detect"
+
+        if rom_file is not None:
+            game_id = rom_file.read_text().strip().lower() or rom_file.stem
+
+            if re.match(r'^(?:[a-z0-9-]+:)?[a-z0-9-]+$', game_id) is not None:
+                target = game_id
 
         # pad number
-        nplayer = 1
         id = 0
-        for playercontroller, pad in sorted(playersControllers.items()):
-            if nplayer == 1:
-                id=pad.index
-            nplayer += 1
+        if pad := Controller.find_player_number(playersControllers, 1):
+            id = pad.index
 
         commandArray = ["/usr/bin/scummvm", "-f"]
 
         # set the resolution
-        window_width = str(gameResolution["width"])
-        window_height = str(gameResolution["height"])
-        commandArray.append(f"--window-size={window_width},{window_height}")
+        commandArray.append(f"--window-size={gameResolution['width']},{gameResolution['height']}")
 
         ## user options
 
         # scale factor
-        if system.isOptSet("scumm_scale"):
-            commandArray.append(f"--scale-factor={system.config['scumm_scale']}")
-        else:
-            commandArray.append("--scale-factor=3")
+        commandArray.append(f"--scale-factor={system.config.get('scumm_scale', '3')}")
 
         # sclaer mode
-        if system.isOptSet("scumm_scaler_mode"):
-            commandArray.append(f"--scaler={system.config['scumm_scaler_mode']}")
-        else:
-            commandArray.append("--scaler=normal")
+        commandArray.append(f"--scaler={system.config.get('scumm_scaler_mode', 'normal')}")
 
         #  stretch mode
-        if system.isOptSet("scumm_stretch"):
-            commandArray.append(f"--stretch-mode={system.config['scumm_stretch']}")
-        else:
-            commandArray.append("--stretch-mode=center")
+        if stretch := system.config.get("scumm_stretch"):
+            commandArray.append(f"--stretch-mode={stretch}")
 
         # renderer
-        if system.isOptSet("scumm_renderer"):
-            commandArray.append(f"--renderer={system.config['scumm_renderer']}")
-        else:
-            commandArray.append("--renderer=opengl")
+        commandArray.append(f"--renderer={system.config.get('scumm_renderer', 'opengl')}")
 
         # language
-        if system.isOptSet("scumm_language"):
-            commandArray.extend(["-q", f"{system.config['scumm_language']}"])
+        if language := system.config.get("scumm_language"):
+            commandArray.extend(["-q", f"{language}"])
 
         # logging
         commandArray.append("--logfile=/userdata/system/logs/scummvm.log")
@@ -107,21 +102,25 @@ class ScummVMGenerator(Generator):
             [f"--joystick={id}",
             f"--screenshotspath={SCREENSHOTS}",
             f"--extrapath={scummExtra}",
-            f"--path={romPath}",
-            f"{romName}"]
+            f"--savepath={scummSave}",
+            f"--path={rom_path}",
+            f"{target}"]
         )
+
+        # Determine SDL Video Driver
+        sdl_videodriver = "wayland" if "WAYLAND_DISPLAY" in os.environ else "x11"
 
         return Command.Command(
             array=commandArray,
             env={
-                "XDG_CONFIG_HOME":CONFIGS,
-                "XDG_DATA_HOME":SAVES,
-                "XDG_CACHE_HOME":CACHE,
+                "SDL_VIDEODRIVER": sdl_videodriver,
+                "XDG_CONFIG_HOME": CONFIGS,
+                "XDG_CACHE_HOME": CACHE,
                 "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers)
             }
         )
 
     def getInGameRatio(self, config, gameResolution, rom):
-        if ("scumm_stretch" in config and config["scumm_stretch"] == "fit_force_aspect") or ("scumm_stretch" in config and config["scumm_stretch"] == "pixel-perfect"):
+        if config.get("scumm_stretch") in ["fit_force_aspect", "pixel-perfect"]:
             return 4/3
         return 16/9

@@ -34,13 +34,14 @@ class XemuGenerator(Generator):
 
         environment = {
             "XDG_CONFIG_HOME": CONFIGS,
-            "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers)
+            "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers),
+            "LC_NUMERIC": "C"
         }
 
         return Command.Command(array=commandArray, env=environment)
 
     def getInGameRatio(self, config, gameResolution, rom):
-        if ("xemu_scaling" in config and config["xemu_scaling"] == "stretch") or ("xemu_aspect" in config and config["xemu_aspect"] == "16x9"):
+        if config.get("xemu_scaling") == "stretch" or config.get("xemu_aspect") == "16x9":
             return 16/9
         return 4/3
 

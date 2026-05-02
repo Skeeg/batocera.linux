@@ -8,7 +8,7 @@ from .mupenPaths import MUPEN_SYSTEM_MAPPING, MUPEN_USER_MAPPING
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from ...controller import Controller, ControllerMapping
+    from ...controller import Controller, Controllers
     from ...Emulator import Emulator
     from ...input import Input, InputMapping
     from ...types import DeviceInfoMapping
@@ -23,17 +23,19 @@ mupenHatToReverseAxis = {'1': 'Down', '2': 'Left',  '4': 'Up',   '8': 'Right'}
 mupenDoubleAxis = {0:'X Axis', 1:'Y Axis'}
 
 valid_n64_controller_guids = [
-    # official nintendo switch n64 controller
-    "050000007e0500001920000001800000",
-    # 8bitdo n64 modkit
-    "05000000c82d00006928000000010000",
+    "050000007e0500001920000001800000", # official nintendo switch n64 controller
+    "05000000c82d00006928000000010000", # 8bitdo n64 modkit
     "030000007e0500001920000011810000",
+    "05000000c82d00001930000001000000", # 8bitdo n64 bt
+    "03000000c82d00001930000011010000", # 8bitdo n64 wired
 ]
 
 valid_n64_controller_names = [
     "N64 Controller",
     "Nintendo Co., Ltd. N64 Controller",
     "8BitDo N64 Modkit",
+    "8BitDo 64 BT",
+    "8BitDo 8BitDo 64 Bluetooth Controller",
 ]
 
 def getMupenMapping(use_n64_inputs: bool) -> dict[str, str]:
@@ -45,35 +47,27 @@ def getMupenMapping(use_n64_inputs: bool) -> dict[str, str]:
             list_name = 'n64InputList' if use_n64_inputs else 'defaultInputList'
             for inputs in dom.getElementsByTagName(list_name):
                 for input in inputs.childNodes:
-                    if input.attributes:
-                        if input.attributes['name']:
-                            if input.attributes['value']:
-                                map[input.attributes['name'].value] = input.attributes['value'].value
+                    if input.attributes and input.attributes['name'] and input.attributes['value']:
+                        map[input.attributes['name'].value] = input.attributes['value'].value
     return map
 
-def setControllersConfig(iniConfig: CaseSensitiveConfigParser, controllers: ControllerMapping, system: Emulator, wheels: DeviceInfoMapping) -> None:
-    nplayer = 1
-
-    for playercontroller, pad in sorted(controllers.items()):
+def setControllersConfig(iniConfig: CaseSensitiveConfigParser, controllers: Controllers, system: Emulator, wheels: DeviceInfoMapping) -> None:
+    for pad in controllers:
         isWheel = False
         if pad.device_path in wheels and wheels[pad.device_path]["isWheel"]:
             isWheel = True
-        config = defineControllerKeys(nplayer, pad, system, isWheel)
-        fillIniPlayer(nplayer, iniConfig, pad, config)
-        nplayer += 1
+        config = defineControllerKeys(pad.player_number, pad, system, isWheel)
+        fillIniPlayer(pad.player_number, iniConfig, pad, config)
 
     # remove section with no player
-    for x in range(nplayer, 4):
-        section = "Input-SDL-Control"+str(x)
+    for x in range(len(controllers) + 1, 4):
+        section = f"Input-SDL-Control{x}"
         if iniConfig.has_section(section):
-            cleanPlayer(nplayer, iniConfig)
+            cleanPlayer(x, iniConfig)
 
 def getJoystickPeak(start_value: str, config_value: str, system: Emulator) -> str:
     default_value = int(start_value.split(',')[0])
-    if config_value in system.config:
-        multiplier = float(system.config[config_value])
-    else:
-        multiplier = 1
+    multiplier = system.config.get_float(config_value, 1)
 
     # This is needed because higher peak value lowers sensitivity and vice versa
     if multiplier != 1.0:
@@ -82,9 +76,9 @@ def getJoystickPeak(start_value: str, config_value: str, system: Emulator) -> st
 
         # Figure out if we need to add or subtract the starting peak value
         if adjusted_value < default_value:
-            peak = int(round(default_value + difference))
+            peak = round(default_value + difference)
         else:
-            peak = int(round(default_value - difference))
+            peak = round(default_value - difference)
     else:
         peak = default_value
 
@@ -92,18 +86,15 @@ def getJoystickPeak(start_value: str, config_value: str, system: Emulator) -> st
 
 def getJoystickDeadzone(default_peak: str, config_value: str, system: Emulator) -> str:
     default_value = int(default_peak.split(',')[0])
-    if config_value in system.config:
-        deadzone_multiplier = float(system.config[config_value])
-    else:
-        deadzone_multiplier = 0.01
+    deadzone_multiplier = system.config.get_float(config_value, 0.01)
 
-    deadzone = int(round(default_value * deadzone_multiplier))
+    deadzone = round(default_value * deadzone_multiplier)
 
     return f"{deadzone},{deadzone}"
 
 def defineControllerKeys(nplayer: int, controller: Controller, system: Emulator, isWheel: bool) -> dict[str, str]:
         # check for auto-config inputs by guid and name, or es settings
-        if (controller.guid in valid_n64_controller_guids and controller.name in valid_n64_controller_names) or (f"mupen64-controller{nplayer}" in system.config and system.config[f"mupen64-controller{nplayer}"] != "retropad"):
+        if (controller.guid in valid_n64_controller_guids and controller.name in valid_n64_controller_names) or (system.config.get(f"mupen64-controller{nplayer}", "retropad") != "retropad"):
             mupenmapping = getMupenMapping(True)
         else:
             mupenmapping = getMupenMapping(False)
@@ -117,7 +108,7 @@ def defineControllerKeys(nplayer: int, controller: Controller, system: Emulator,
 
         # Analog Deadzone
         if isWheel:
-            config['AnalogDeadzone'] = f"0,0"
+            config['AnalogDeadzone'] = "0,0"
         else:
             config['AnalogDeadzone'] = getJoystickDeadzone(mupenmapping['AnalogPeak'], f"mupen64-deadzone{nplayer}", system)
 
@@ -137,13 +128,12 @@ def defineControllerKeys(nplayer: int, controller: Controller, system: Emulator,
         fakeSticks = { 'joystick2up' : 'joystick2down', 'joystick2left' : 'joystick2right'}
         # Cheat on the controller
         for realStick, fakeStick in fakeSticks.items():
-                if realStick in controller.inputs:
-                    if controller.inputs[realStick].type == "axis":
-                        print(fakeStick + "-> " + realStick)
-                        controller.inputs[fakeStick] = controller.inputs[realStick].replace(
-                            name=fakeStick,
-                            value=str(-int(controller.inputs[realStick].value))
-                        )
+                if realStick in controller.inputs and controller.inputs[realStick].type == "axis":
+                    print(f"{fakeStick} -> {realStick}")
+                    controller.inputs[fakeStick] = controller.inputs[realStick].replace(
+                        name=fakeStick,
+                        value=str(-int(controller.inputs[realStick].value))
+                    )
 
         for inputIdx in controller.inputs:
                 input = controller.inputs[inputIdx]
@@ -154,7 +144,7 @@ def defineControllerKeys(nplayer: int, controller: Controller, system: Emulator,
                             if mupenmapping[input.name] not in config :
                                 config[mupenmapping[input.name]] = value
                             else:
-                                config[mupenmapping[input.name]] += " " + value
+                                config[mupenmapping[input.name]] += f" {value}"
         return config
 
 def setControllerLine(mupenmapping: Mapping[str, str], input: Input, mupenSettingName: str, allinputs: InputMapping) -> str:
@@ -205,7 +195,7 @@ def setControllerLine(mupenmapping: Mapping[str, str], input: Input, mupenSettin
         return value
 
 def fillIniPlayer(nplayer: int, iniConfig: CaseSensitiveConfigParser, controller: Controller, config: dict[str, str]) -> None:
-        section = "Input-SDL-Control"+str(nplayer)
+        section = f"Input-SDL-Control{nplayer}"
 
         # set static config
         if not iniConfig.has_section(section):
@@ -249,7 +239,7 @@ def fillIniPlayer(nplayer: int, iniConfig: CaseSensitiveConfigParser, controller
                 iniConfig.set(section, inputName, config[inputName])
 
 def cleanPlayer(nplayer: int, iniConfig: CaseSensitiveConfigParser) -> None:
-        section = "Input-SDL-Control"+str(nplayer)
+        section = f"Input-SDL-Control{nplayer}"
 
         # set static config
         if not iniConfig.has_section(section):

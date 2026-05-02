@@ -1,17 +1,18 @@
 ################################################################################
 #
-# armbian firmware
+# firmware-armbian
 #
 ################################################################################
-# Version.: Commits on Jul 16, 2023
-FIRMWARE_ARMBIAN_VERSION = 125181cac727f0c1b70c451195f2b4963d903869
-FIRMWARE_ARMBIAN_SITE = $(call github,armbian,firmware,$(FIRMWARE_ARMBIAN_VERSION))
+# Version: Commits on Nov 5, 2025
+FIRMWARE_ARMBIAN_VERSION = 5d4dd2fc8dd4e28ac4c85696b8ab86775babc7c7
+FIRMWARE_ARMBIAN_SITE = https://github.com/armbian/firmware
+FIRMWARE_ARMBIAN_SITE_METHOD = git
 
 FIRMWARE_ARMBIAN_TARGET_DIR=$(TARGET_DIR)/lib/firmware/
 
 define FIRMWARE_ARMBIAN_INSTALL_TARGET_CMDS
 	mkdir -p $(FIRMWARE_ARMBIAN_TARGET_DIR)
-	cp -aRf $(@D)/* $(FIRMWARE_ARMBIAN_TARGET_DIR)/
+	rsync -au --checksum --force $(@D)/ $(FIRMWARE_ARMBIAN_TARGET_DIR)/
 endef
 
 $(eval $(generic-package))

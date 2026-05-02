@@ -9,7 +9,8 @@ DUCKSTATION_LEGACY_SITE = https://github.com/stenzek/duckstation.git
 DUCKSTATION_LEGACY_SITE_METHOD=git
 DUCKSTATION_LEGACY_GIT_SUBMODULES=YES
 DUCKSTATION_LEGACY_LICENSE = GPLv2
-DUCKSTATION_LEGACY_DEPENDENCIES = fmt boost ffmpeg libcurl ecm dbus
+DUCKSTATION_LEGACY_DEPENDENCIES = fmt boost ffmpeg libcurl ecm dbus duckstation-common
+DUCKSTATION_LEGACY_EMULATOR_INFO = duckstation-legacy.duckstation.core.yml
 
 DUCKSTATION_LEGACY_SUPPORTS_IN_SOURCE_BUILD = NO
 
@@ -71,10 +72,6 @@ define DUCKSTATION_LEGACY_INSTALL_TARGET_CMDS
     cp -R $(@D)/buildroot-build/bin/resources \
         $(TARGET_DIR)/usr/share/duckstation/
     rm -f $(TARGET_DIR)/usr/share/duckstation/resources/gamecontrollerdb.txt
-
-    mkdir -p $(TARGET_DIR)/usr/share/evmapy
-    cp $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/duckstation/psx.duckstation.keys \
-        $(TARGET_DIR)/usr/share/evmapy
 endef
 
 define DUCKSTATION_LEGACY_TRANSLATIONS
@@ -88,3 +85,4 @@ ifeq ($(BR2_PACKAGE_QT6)$(BR2_PACKAGE_XORG7),yy)
 endif
 
 $(eval $(cmake-package))
+$(eval $(emulator-info-package))

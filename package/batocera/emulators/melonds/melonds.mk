@@ -3,13 +3,15 @@
 # melonds
 #
 ################################################################################
-# Version: Commits on May 16, 2024
-MELONDS_VERSION = 216b8e045daffa3582978e81c12fdbe74873e246
+
+MELONDS_VERSION = 1.1
 MELONDS_SITE = https://github.com/Arisotura/melonDS.git
 MELONDS_SITE_METHOD=git
 MELONDS_GIT_SUBMODULES=YES
 MELONDS_LICENSE = GPLv2
-MELONDS_DEPENDENCIES = sdl2 qt6base qt6multimedia slirp libepoxy libarchive
+MELONDS_EMULATOR_INFO = melonds.emulator.yml
+MELONDS_DEPENDENCIES += ecm sdl2 slirp libepoxy libarchive libenet
+MELONDS_DEPENDENCIES += qt6base qt6svg qt6multimedia
 
 MELONDS_SUPPORTS_IN_SOURCE_BUILD = NO
 
@@ -18,23 +20,17 @@ MELONDS_CONF_OPTS += -DCMAKE_INSTALL_PREFIX="/usr"
 MELONDS_CONF_OPTS += -DBUILD_SHARED_LIBS=OFF
 MELONDS_CONF_OPTS += -DUSE_QT6=ON
 
-ifeq ($(BR2_PACKAGE_WAYLAND),y)
-MELONDS_CONF_OPTS += -DENABLE_WAYLAND=ON
-else
+# wayland is currently broken, don't set this...
+#ifeq ($(BR2_PACKAGE_WAYLAND),y)
+#MELONDS_CONF_OPTS += -DENABLE_WAYLAND=ON
+#else
 MELONDS_CONF_OPTS += -DENABLE_WAYLAND=OFF
-endif
+#endif
 
 define MELONDS_INSTALL_TARGET_CMDS
     $(INSTALL) -D $(@D)/buildroot-build/melonDS \
 		$(TARGET_DIR)/usr/bin/
 endef
 
-define MELONDS_POST_PROCESS
-	mkdir -p $(TARGET_DIR)/usr/share/evmapy
-	cp $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/melonds/nds.melonds.keys \
-	    $(TARGET_DIR)/usr/share/evmapy
-endef
-
-MELONDS_POST_INSTALL_TARGET_HOOKS += MELONDS_POST_PROCESS
-
 $(eval $(cmake-package))
+$(eval $(emulator-info-package))

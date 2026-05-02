@@ -4,10 +4,11 @@
 #
 ################################################################################
 
-OPENMSX_VERSION = RELEASE_19_1
+OPENMSX_VERSION = RELEASE_20_0
 OPENMSX_SITE = $(call github,openMSX,openMSX,$(OPENMSX_VERSION))
 OPENMSX_LICENSE = GPLv2
 OPENMSX_DEPENDENCIES = zlib sdl2 sdl2_ttf libpng tcl freetype
+OPENMSX_EMULATOR_INFO = openmsx.emulator.yml
 
 OPENMSX_CONF_ENV += $(TARGET_CONFIGURE_OPTS) \
                 CXX="$(TARGET_CXX)" CC="$(TARGET_CC)" \
@@ -28,9 +29,9 @@ else
 OPENMSX_CONF_OPTS += -Dalsamidi=disabled
 endif
 #glrenderer
-ifeq ($(BR2_PACKAGE_LIBGLEW),y)
+ifeq ($(BR2_PACKAGE_LIBGLEW)$(BR2_PACKAGE_LIBGLU),yy)
 OPENMSX_CONF_OPTS += -Dglrenderer=enabled
-OPENMSX_DEPENDENCIES += libglew
+OPENMSX_DEPENDENCIES += libglew libglu
 else
 OPENMSX_CONF_OPTS += -Dglrenderer=disabled
 endif
@@ -78,3 +79,4 @@ OPENMSX_PRE_CONFIGURE_HOOKS += OPENMSX_TCL_CONFIG_FIXUP
 OPENMSX_POST_INSTALL_TARGET_HOOKS += OPENMSX_POST_INSTALL_CLEANUP
 
 $(eval $(autotools-package))
+$(eval $(emulator-info-package))

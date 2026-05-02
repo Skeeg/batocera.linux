@@ -1,10 +1,12 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Final
+from typing import TYPE_CHECKING, Any, Final
+
+import toml
 
 from ... import Command
-import toml
 from ...batoceraPaths import BIOS, CHEATS, CONFIGS, ROMS, SAVES, mkdir_if_not_exists
+from ...controller import Controller
 from ..Generator import Generator
 
 if TYPE_CHECKING:
@@ -31,23 +33,20 @@ class MelonDSGenerator(Generator):
 
         # Config file path
         configFileName = _MELONDS_CONFIG / "melonDS.toml"
-        
+
         # Load existing config if file exists
         if configFileName.exists():
-            with open(configFileName, "r") as toml_file:
+            with configFileName.open() as toml_file:
                 config = toml.load(toml_file)
         else:
             config = {}
 
         # Define base configuration
-        base_config = {
+        base_config: dict[str, Any] = {
             "MouseHide": False,
             "LastBIOSFolder": str(BIOS),
             "PauseLostFocus": False,
             "LastROMFolder": str(_MELONDS_ROMS),
-            "SavestatePath": str(_MELONDS_SAVES),
-            "CheatFilePath": str(_MELONDS_CHEATS),
-            "SaveFilePath": str(_MELONDS_SAVES),
             "MouseHideSeconds": 5,
             "DS": {
                 "FirmwarePath": str(BIOS / "firmware.bin"),
@@ -62,8 +61,8 @@ class MelonDSGenerator(Generator):
             "DSi": {
                 "FullBIOSBoot": False,
                 "FirmwarePath": str(BIOS / "dsi_firmware.bin"),
-                "BIOS9Path": str(BIOS / "bios9.bin"),
-                "BIOS7Path": str(BIOS / "bios7.bin"),
+                "BIOS9Path": str(BIOS / "dsi_bios9.bin"),
+                "BIOS7Path": str(BIOS / "dsi_bios7.bin"),
                 "NANDPath": str(BIOS / "dsi_nand.bin"),
                 "SD": {
                     "FolderPath": str(_MELONDS_SAVES),
@@ -76,14 +75,34 @@ class MelonDSGenerator(Generator):
                 "ExternalBIOSEnable": True
             },
             "Instance0": {
+                "SaveFilePath": str(_MELONDS_SAVES),
+                "SavestatePath": str(_MELONDS_SAVES),
+                "CheatFilePath": str(_MELONDS_CHEATS),
+                "EnableCheats": False,
                 "Joystick": {},
+                "Firmware": {
+                    "MAC": "",
+                    "BirthdayDay": 1,
+                    "BirthdayMonth": 1,
+                    "Language": 1,
+                    "Message": "",
+                    "OverrideSettings": True
+                },
                 "Window0": {
                     "ScreenRotation": 0,
                     "ScreenSwap": False,
                     "ScreenLayout": 0,
                     "ScreenSizing": 0,
-                    "IntegerScaling": 0,
+                    "IntegerScaling": False,
                     "ShowOSD": False
+                },
+                "Window1": {
+                    "Enabled": False,
+                    "ScreenRotation": 0,
+                    "ScreenSwap": False,
+                    "ScreenLayout": 0,
+                    "ScreenSizing": 5,
+                    "IntegerScaling": False
                 }
             },
             "3D": {
@@ -94,85 +113,82 @@ class MelonDSGenerator(Generator):
                 }
             },
             "Screen": {
-                "VSync": False
+                "VSync": False,
+                "UseGL": False
             }
         }
 
         ## User selected options
 
-        # Override Renderer if system option is set
-        if system.isOptSet("melonds_renderer"):
-            base_config["3D"]["Renderer"] = int(system.config["melonds_renderer"])
-        
-        if system.isOptSet("melonds_vsync"):
-            base_config["Screen"]["VSync"] = system.config["melonds_vsync"]
+        # Override Renderer and UseGL
+        if "melonds_renderer" in system.config:
+            renderer = system.config.get_int("melonds_renderer")
+            base_config["3D"]["Renderer"] = renderer
+            base_config["Screen"]["UseGL"] = (renderer != 0)
+
+        if vsync := system.config.get_bool("melonds_vsync"):
+            base_config["Screen"]["VSync"] = vsync
             base_config["Screen"]["VSyncInterval"] = 1
-        
+
         # Cheater! Enable cheats if the option is set
-        if system.isOptSet("melonds_cheats"):
-            base_config["Instance0"]["EnableCheats"] = system.config["melonds_cheats"]
-        else:
-            base_config["Instance0"]["EnableCheats"] = False
-        
+        base_config["Instance0"]["EnableCheats"] = system.config.get_bool("melonds_cheats", False)
+
         # Framerate
-        if system.isOptSet("melonds_framerate"):
-            base_config["LimitFPS"] = system.config["melonds_framerate"]
-        else:
-            base_config["LimitFPS"] = True
-        
+        base_config["LimitFPS"] = system.config.get_bool("melonds_framerate", True)
+
         # Resolution
-        if system.isOptSet("melonds_resolution"):
-            base_config["3D"]["GL"]["ScaleFactor"] = int(system.config["melonds_resolution"])
-            if system.config["melonds_resolution"] == "2":
-                base_config["3D"]["GL"]["HiresCoordinates"] = True
-            else:
-                base_config["3D"]["GL"]["HiresCoordinates"] = False
-        
+        if (resolution := system.config.get_int("melonds_resolution")) is not system.config.MISSING:
+            base_config["3D"]["GL"]["ScaleFactor"] = resolution
+            base_config["3D"]["GL"]["HiresCoordinates"] = (resolution == 2)
+
         # Polygons
-        if system.isOptSet("melonds_polygons"):
-            base_config["3D"]["GL"]["BetterPolygons"] = system.config["melonds_polygons"]
-        
-        # Rotation
-        if system.isOptSet("melonds_rotation"):
-            base_config["Instance0"]["Window0"]["ScreenRotation"] = int(system.config["melonds_rotation"])
-        else:
-            base_config["Instance0"]["Window0"]["ScreenRotation"] = 0
+        if polygons := system.config.get_bool("melonds_polygons"):
+            base_config["3D"]["GL"]["BetterPolygons"] = polygons
 
-        # Screen Swap
-        if system.isOptSet("melonds_screenswap"):
-            base_config["Instance0"]["Window0"]["ScreenSwap"] = system.config["melonds_screenswap"]
-        else:
-            base_config["Instance0"]["Window0"]["ScreenSwap"] = False
-
-        # Screen Layout
-        if system.isOptSet("melonds_layout"):
-            base_config["Instance0"]["Window0"]["ScreenLayout"] = int(system.config["melonds_layout"])
-        else:
-            base_config["Instance0"]["Window0"]["ScreenLayout"] = 0
-        
-        # Screen Sizing
-        if system.isOptSet("melonds_screensizing"):
-            base_config["Instance0"]["Window0"]["ScreenSizing"] = int(system.config["melonds_screensizing"])
-        else:
-            base_config["Instance0"]["Window0"]["ScreenSizing"] = 0
-        
-        # Integer Scaling
-        if system.isOptSet("melonds_scaling"):
-            base_config["Instance0"]["Window0"]["IntegerScaling"] = system.config["melonds_scaling"]
-        else:
-            base_config["Instance0"]["Window0"]["IntegerScaling"] = 0
-        
         # OSD
-        if system.isOptSet("melonds_osd"):
-            base_config["Instance0"]["Window0"]["ShowOSD"] = system.config["melonds_osd"]
-        else:
-            base_config["Instance0"]["Window0"]["ShowOSD"] = False
-        
+        base_config["Instance0"]["Window0"]["ShowOSD"] = system.config.get_bool("melonds_osd", False)
+
         # Console
-        if system.isOptSet("melonds_console"):
-            base_config["Emu"]["ConsoleType"] = int(system.config["melonds_console"])
+        base_config["Emu"]["ConsoleType"] = system.config.get_int("melonds_console", 0)
+        
+        # Override Firmware settings
+        base_config["Instance0"]["Firmware"]["OverrideSettings"] = system.config.get_bool("melonds_use_fw_settings", False)
+
+        # Firmware Language
+        base_config["Instance0"]["Firmware"]["Language"] = system.config.get_int("melonds_language", 1)
+
+        # Birthday date
+        base_config["Instance0"]["Firmware"]["BirthdayDay"] = system.config.get_int("melonds_day", 1)
+        base_config["Instance0"]["Firmware"]["BirthdayMonth"] = system.config.get_int("melonds_month", 1)
+
+        # Scaling (Matches TOML boolean type)
+        scaling = system.config.get_bool("melonds_scaling", False)
+
+        # Check if dual screen mode is enabled
+        is_dual_screen_enabled = system.config.get_bool("melonds_dual_screen", False)
+
+        if is_dual_screen_enabled:
+            # Window0 (Top Screen)
+            base_config["Instance0"]["Window0"]["ScreenRotation"] = 0
+            base_config["Instance0"]["Window0"]["ScreenSwap"] = False
+            base_config["Instance0"]["Window0"]["ScreenLayout"] = 0
+            base_config["Instance0"]["Window0"]["ScreenSizing"] = 4
+            base_config["Instance0"]["Window0"]["IntegerScaling"] = scaling
+
+            # Window1 (Bottom Screen)
+            base_config["Instance0"]["Window1"]["Enabled"] = True
+            base_config["Instance0"]["Window1"]["ScreenRotation"] = 0
+            base_config["Instance0"]["Window1"]["ScreenSwap"] = False
+            base_config["Instance0"]["Window1"]["ScreenLayout"] = 0
+            base_config["Instance0"]["Window1"]["ScreenSizing"] = 5
+            base_config["Instance0"]["Window1"]["IntegerScaling"] = scaling
         else:
-            base_config["Emu"]["ConsoleType"] = 0
+            base_config["Instance0"]["Window1"]["Enabled"] = False
+            base_config["Instance0"]["Window0"]["ScreenRotation"] = system.config.get_int("melonds_rotation", 0)
+            base_config["Instance0"]["Window0"]["ScreenSwap"] = system.config.get_bool("melonds_screenswap", False)
+            base_config["Instance0"]["Window0"]["ScreenLayout"] = system.config.get_int("melonds_layout", 0)
+            base_config["Instance0"]["Window0"]["ScreenSizing"] = system.config.get_int("melonds_screensizing", 0)
+            base_config["Instance0"]["Window0"]["IntegerScaling"] = scaling
 
         # Map controllers
         melonDSMapping = {
@@ -189,12 +205,10 @@ class MelonDSGenerator(Generator):
             "x":        "X",
             "y":        "Y"
         }
-        
+
         val = -1
-        for controller, pad in sorted(playersControllers.items()):
-            # Only use Player 1 controls
-            if pad.player_number != 1:
-                continue
+        # Only use Player 1 controls
+        if pad := Controller.find_player_number(playersControllers, 1):
             for index in pad.inputs:
                 input = pad.inputs[index]
                 if input.name not in melonDSMapping:
@@ -217,7 +231,7 @@ class MelonDSGenerator(Generator):
         config.update(base_config)
 
         # Write updated configuration back to the file
-        with open(configFileName, "w") as toml_file:
+        with configFileName.open("w") as toml_file:
             toml.dump(config, toml_file)
 
         commandArray = ["/usr/bin/melonDS", "-f", rom]
@@ -225,7 +239,6 @@ class MelonDSGenerator(Generator):
             array=commandArray,
             env={
                 "XDG_CONFIG_HOME": CONFIGS,
-                "XDG_DATA_HOME": SAVES,
-                "QT_QPA_PLATFORM": "xcb"
+                "XDG_DATA_HOME": SAVES
             }
         )

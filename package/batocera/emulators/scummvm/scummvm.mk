@@ -3,12 +3,19 @@
 # scummvm
 #
 ################################################################################
-# Version: 2.8.1 - "Oh MMy!"
-SCUMMVM_VERSION = v2.8.1
+
+SCUMMVM_VERSION = v2026.1.0
 SCUMMVM_SITE = $(call github,scummvm,scummvm,$(SCUMMVM_VERSION))
 SCUMMVM_LICENSE = GPLv2
-SCUMMVM_DEPENDENCIES += sdl2 zlib libmpeg2 libogg libvorbis flac libmad
-SCUMMVM_DEPENDENCIES += libpng libtheora faad2 freetype libjpeg-bato fluidsynth
+SCUMMVM_EMULATOR_INFO = scummvm.emulator.yml
+SCUMMVM_DEPENDENCIES += faad2 flac fluidsynth freetype giflib libmad libmpeg2
+SCUMMVM_DEPENDENCIES += libogg libpng libtheora libvorbis libvpx musepack sdl2 zlib
+
+ifeq ($(BR2_PACKAGE_JPEG_TURBO),y)
+SCUMMVM_DEPENDENCIES += jpeg-turbo
+else
+SCUMMVM_DEPENDENCIES += jpeg
+endif
 
 SCUMMVM_ADDITIONAL_FLAGS += -I$(STAGING_DIR)/usr/include -lpthread -lm
 SCUMMVM_ADDITIONAL_FLAGS += -L$(STAGING_DIR)/usr/lib -lGLESv2 -lEGL
@@ -63,11 +70,9 @@ define SCUMMVM_ADD_VIRTUAL_KEYBOARD
         $(TARGET_DIR)/usr/share/scummvm
     cp -f $(@D)/backends/vkeybd/packs/vkeybd_small.zip \
         $(TARGET_DIR)/usr/share/scummvm
-    mkdir -p $(TARGET_DIR)/usr/share/evmapy/
-    cp -f $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/scummvm/scummvm.keys \
-        $(TARGET_DIR)/usr/share/evmapy/
 endef
 
 SCUMMVM_POST_INSTALL_TARGET_HOOKS += SCUMMVM_ADD_VIRTUAL_KEYBOARD
 
 $(eval $(autotools-package))
+$(eval $(emulator-info-package))

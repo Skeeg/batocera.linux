@@ -55,7 +55,7 @@ class Sonic3AIRGenerator(Generator):
         # extract the current resolution value
         current_resolution = json_text.split('"WindowSize": "')[1].split('"')[0]
         # replace the resolution with new values
-        new_resolution = str(gameResolution["width"]) + " x " + str(gameResolution["height"])
+        new_resolution = f'{gameResolution["width"]} x {gameResolution["height"]}'
         json_text = json_text.replace(f'"WindowSize": "{current_resolution}"', f'"WindowSize": "{new_resolution}"')
 
         with config_dest_file.open('w') as file:
@@ -81,7 +81,8 @@ class Sonic3AIRGenerator(Generator):
             env={
                 "XDG_DATA_HOME":CONFIGS,
                 "SDL_GAMECONTROLLERCONFIG": generate_sdl_game_controller_config(playersControllers),
-                "SDL_JOYSTICK_HIDAPI": "0"
+                "SDL_JOYSTICK_HIDAPI": "0",
+                "SDL_AUDIODRIVER": "alsa"
             }
         )
 

@@ -4,11 +4,13 @@
 #
 ################################################################################
 
-LIBRETRO_WASM4_VERSION = v2.7.0
+LIBRETRO_WASM4_VERSION = v2.7.1
 LIBRETRO_WASM4_SITE = https://github.com/aduros/wasm4
 LIBRETRO_WASM4_SITE_METHOD = git
 LIBRETRO_WASM4_GIT_SUBMODULES = yes
 LIBRETRO_WASM4_LICENSE = ISC
+LIBRETRO_WASM4_DEPENDENCIES += retroarch
+LIBRETRO_WASM4_EMULATOR_INFO = wasm4.libretro.core.yml
 
 LIBRETRO_WASM4_SUBDIR = runtimes/native
 
@@ -23,3 +25,4 @@ define LIBRETRO_WASM4_INSTALL_TARGET_CMDS
 endef
 
 $(eval $(cmake-package))
+$(eval $(emulator-info-package))

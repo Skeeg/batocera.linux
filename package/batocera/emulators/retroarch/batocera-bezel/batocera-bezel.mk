@@ -3,8 +3,8 @@
 # batocera bezel
 #
 ################################################################################
-# Version.: Commits on Oct 18, 2024
-BATOCERA_BEZEL_VERSION = c849638c73106a9f33d9634c564d0c1e94f753d3
+# Version.: Commits on Feb 18, 2025
+BATOCERA_BEZEL_VERSION = 77a3239f3f0682fcf9e6050f07b40677395e5db7
 BATOCERA_BEZEL_SITE = $(call github,batocera-linux,batocera-bezel,$(BATOCERA_BEZEL_VERSION))
 
 define BATOCERA_BEZEL_INSTALL_TARGET_CMDS

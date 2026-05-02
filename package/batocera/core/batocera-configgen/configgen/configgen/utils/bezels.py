@@ -1,23 +1,33 @@
 from __future__ import annotations
 
+import json
 import logging
+import shutil
 import struct
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 
-from PIL import Image, ImageOps
+import qrcode
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from ..batoceraPaths import BATOCERA_SHARE_DIR, SYSTEM_DECORATIONS, USER_DECORATIONS
+from ..batoceraPaths import BATOCERA_SHARE_DIR, ES_GUNS_ART_METADATA, SYSTEM_DECORATIONS, USER_DECORATIONS
+from ..exceptions import BatoceraException
+from . import metadata
 from .videoMode import getAltDecoration
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from PIL.ImageFile import ImageFile
+    from qrcode.image.pil import PilImage
 
+    from configgen.gun import Guns
+    from configgen.types import Resolution
+
+    from ..config import SystemConfig
     from ..Emulator import Emulator
 
-eslog = logging.getLogger(__name__)
+_logger = logging.getLogger(__name__)
 
 class BezelInfos(TypedDict):
     png: Path
@@ -66,7 +76,7 @@ def getBezelInfos(rom: str | Path, bezel: str, systemName: str, emulator: str) -
                 overlay_mamezip_file  = USER_DECORATIONS / bezel / "games" / f"{romBase}.zip"
                 bezel_game = True
                 if not overlay_png_file.exists():
-                    if altDecoration != 0:
+                    if altDecoration != "0":
                         overlay_info_file = USER_DECORATIONS / bezel / "systems" / f"{systemName}-{altDecoration!s}.info"
                         overlay_png_file  = USER_DECORATIONS / bezel / "systems" / f"{systemName}-{altDecoration!s}.png"
                         overlay_layout_file  = USER_DECORATIONS / bezel / "systems" / f"{systemName}-{altDecoration!s}.lay"
@@ -79,7 +89,7 @@ def getBezelInfos(rom: str | Path, bezel: str, systemName: str, emulator: str) -
                         overlay_mamezip_file  = USER_DECORATIONS / bezel / "systems" / f"{systemName}.zip"
                         bezel_game = False
                         if not overlay_png_file.exists():
-                            if altDecoration != 0:
+                            if altDecoration != "0":
                                 overlay_info_file = SYSTEM_DECORATIONS / bezel / "systems" / f"{systemName}-{altDecoration!s}.info"
                                 overlay_png_file  = SYSTEM_DECORATIONS / bezel / "systems" / f"{systemName}-{altDecoration!s}.png"
                                 overlay_layout_file  = SYSTEM_DECORATIONS / bezel / "systems" / f"{systemName}-{altDecoration!s}.lay"
@@ -117,7 +127,7 @@ def getBezelInfos(rom: str | Path, bezel: str, systemName: str, emulator: str) -
                                                 bezel_game = True
                                                 if not overlay_png_file.exists():
                                                     return None
-    eslog.debug(f"Original bezel file used: {overlay_png_file!s}")
+    _logger.debug("Original bezel file used: %s", overlay_png_file)
     return { "png": overlay_png_file, "info": overlay_info_file, "layout": overlay_layout_file, "mamezip": overlay_mamezip_file, "specific_to_game": bezel_game }
 
 # Much faster than PIL Image.size
@@ -139,7 +149,7 @@ def fast_image_size(image_file: str | Path) -> tuple[int, int]:
 def resizeImage(input_png: str | Path, output_png: str | Path, screen_width: int, screen_height: int, bezel_stretch: bool = False) -> None:
     imgin = Image.open(input_png)
     fillcolor = 'black'
-    eslog.debug(f"Resizing bezel: image mode {imgin.mode}")
+    _logger.debug("Resizing bezel: image mode %s", imgin.mode)
     if imgin.mode != "RGBA":
         alphaPaste(input_png, output_png, imgin, fillcolor, (screen_width, screen_height), bezel_stretch)
     else:
@@ -149,7 +159,7 @@ def resizeImage(input_png: str | Path, output_png: str | Path, screen_width: int
 def padImage(input_png: str | Path, output_png: str | Path, screen_width: int, screen_height: int, bezel_width: int, bezel_height: int, bezel_stretch: bool = False) -> None:
     imgin = Image.open(input_png)
     fillcolor = 'black'
-    eslog.debug(f"Padding bezel: image mode {imgin.mode}")
+    _logger.debug("Padding bezel: image mode %s", imgin.mode)
     if imgin.mode != "RGBA":
         alphaPaste(input_png, output_png, imgin, fillcolor, (screen_width, screen_height), bezel_stretch)
     else:
@@ -159,35 +169,69 @@ def padImage(input_png: str | Path, output_png: str | Path, screen_width: int, s
             imgout = ImageOps.pad(imgin, (screen_width, screen_height), color=fillcolor, centering=(0.5,0.5))
         imgout.save(output_png, mode="RGBA", format="PNG")
 
-def tatooImage(input_png: str | Path, output_png: str | Path, system: Emulator) -> None:
+def addQRCode(input_png: str | Path, output_png: str | Path, code: str, system: Emulator):
+    url = f"https://retroachievements.org/game/{code}"
+
+    bxsize = 3
+    bdsize = 2
+    qr = qrcode.QRCode(version=1, box_size=bxsize, border=bdsize)
+    qr.add_data(url)
+    qr.make()
+    qrimg = cast('PilImage', qr.make_image(back_color = (120, 120, 120)))
+
+    x = 29 * bxsize + bdsize * bxsize * 2
+
+    w,h = fast_image_size(input_png)
+    newBezel = Image.open(input_png)
+    qrimg    = cast('Image.Image', qrimg.convert("RGBA"))
+    newBezel = newBezel.convert("RGBA")
+
+    corner = system.config.get('bezel.qrcode_corner', 'NE')
+    if (corner.upper() == 'NW'):
+        newBezel.paste(qrimg, (0, 0, x, x))
+    elif (corner.upper() == 'SE'):
+        newBezel.paste(qrimg, (w-x, h-x, w, h))
+    elif (corner.upper() == 'SW'):
+        newBezel.paste(qrimg, (0, h-x, x, h))
+    else: # default = NE
+        newBezel.paste(qrimg, (w-x, 0, w, x))
+    newBezel.save(output_png)
+
+def tatooImage(input_png: Path, output_png: Path, system: Emulator) -> None:
+    tattoo_file: ImageFile | None = None
+
     if system.config['bezel.tattoo'] == 'system':
+        tattoo_path = BATOCERA_SHARE_DIR / 'controller-overlays' / f'{system.name}.png'
         try:
-            tattoo_file = BATOCERA_SHARE_DIR / 'controller-overlays' / f'{system.name}.png'
-            if not tattoo_file.exists():
-                tattoo_file = BATOCERA_SHARE_DIR / 'controller-overlays' / 'generic.png'
-            tattoo = Image.open(tattoo_file)
-        except:
-            eslog.error(f"Error opening controller overlay: {tattoo_file}")
-    elif system.config['bezel.tattoo'] == 'custom' and (tattoo_file := Path(system.config['bezel.tattoo_file'])).exists():
+            if not tattoo_path.exists():
+                tattoo_path = BATOCERA_SHARE_DIR / 'controller-overlays' / 'generic.png'
+            tattoo_file = Image.open(tattoo_path)
+        except Exception:
+            _logger.error("Error opening controller overlay: %s", tattoo_path)
+    elif system.config['bezel.tattoo'] == 'custom' and (tattoo_path := Path(system.config['bezel.tattoo_file'])).exists():
         try:
-            tattoo = Image.open(tattoo_file)
-        except:
-            eslog.error(f"Error opening custom file: {tattoo_file}")
+            tattoo_file = Image.open(tattoo_path)
+        except Exception:
+            _logger.error("Error opening custom file: %s", tattoo_path)
     else:
+        tattoo_path = BATOCERA_SHARE_DIR / 'controller-overlays' / 'generic.png'
         try:
-            tattoo_file = BATOCERA_SHARE_DIR / 'controller-overlays' / 'generic.png'
-            tattoo = Image.open(tattoo_file)
-        except:
-            eslog.error(f"Error opening custom file: {tattoo_file}")
+            tattoo_file = Image.open(tattoo_path)
+        except Exception:
+            _logger.error("Error opening custom file: %s", tattoo_path)
+
+    if tattoo_file is None:
+        raise BatoceraException(f'Tattoo image could not be opened: {tattoo_path}')
+
     # Open the existing bezel...
     back = Image.open(input_png)
     # Convert it otherwise it implodes later on...
     back = back.convert("RGBA")
-    tattoo = tattoo.convert("RGBA")
+    tattoo = tattoo_file.convert("RGBA")
     # Quickly grab the sizes.
     w,h = fast_image_size(input_png)
-    tw,th = fast_image_size(tattoo_file)
-    if "bezel.resize_tattoo" in system.config and system.config['bezel.resize_tattoo'] == 0:
+    tw,th = fast_image_size(tattoo_path)
+    if not system.config.get_bool("bezel.resize_tattoo", True):
         # Maintain the image's original size.
         # Failsafe for if the image is too large.
         if tw > w or th > h:
@@ -207,10 +251,7 @@ def tatooImage(input_png: str | Path, output_png: str | Path, system: Emulator) 
     tattooCanvas = Image.new("RGBA", back.size)
     # Margin for the tattoo
     margin = int((20 / 1080) * h)
-    if system.isOptSet('bezel.tattoo_corner'):
-        corner = system.config['bezel.tattoo_corner']
-    else:
-        corner = 'NW'
+    corner = system.config.get('bezel.tattoo_corner', 'NW')
     if (corner.upper() == 'NE'):
         tattooCanvas.paste(tattoo, (w-tw,margin)) # 20 pixels vertical margins (on 1080p)
     elif (corner.upper() == 'SE'):
@@ -230,8 +271,8 @@ def alphaPaste(input_png: str | Path, output_png: str | Path, imgin: ImageFile, 
     imgin = Image.open(input_png)
     # TheBezelProject have Palette + alpha, not RGBA. PIL can't convert from P+A to RGBA.
     # Even if it can load P+A, it can't save P+A as PNG. So we have to recreate a new image to adapt it.
-    if not 'transparency' in imgin.info:
-        raise Exception("no transparent pixels in the image, abort")
+    if 'transparency' not in imgin.info:
+        raise BatoceraException("No transparent pixels in the bezel image")
     alpha = imgin.split()[-1]  # alpha from original palette + alpha
     ix,iy = fast_image_size(input_png)
     sx,sy = screensize
@@ -255,7 +296,7 @@ def alphaPaste(input_png: str | Path, output_png: str | Path, imgin: ImageFile, 
         imgout = ImageOps.pad(imgnew, screensize, color=fillcolor, centering=(0.5,0.5))
     imgout.save(output_png, mode="RGBA", format="PNG")
 
-def gunBordersSize(bordersSize: str) -> tuple[int, int]:
+def gunBordersSize(bordersSize: str | None) -> tuple[int, int]:
     if bordersSize == "thin":
         return 1, 0
     if bordersSize == "medium":
@@ -332,7 +373,7 @@ def gunBorderImage(input_png: str | Path, output_png: str | Path, aspect_ratio: 
 def gunsBorderSize(w: int, h: int, innerBorderSizePer: int = 2, outerBorderSizePer: int = 3) -> int:
     return (w * (innerBorderSizePer + outerBorderSizePer)) // 100
 
-def gunsBordersColorFomConfig(config: Mapping[str, object]) -> str:
+def gunsBordersColorFomConfig(config: SystemConfig) -> str:
     if "controllers.guns.borderscolor" in config:
         if config["controllers.guns.borderscolor"] == "red":
             return "#ff0000"
@@ -347,5 +388,217 @@ def gunsBordersColorFomConfig(config: Mapping[str, object]) -> str:
 def createTransparentBezel(output_png: Path, width: int, height: int) -> None:
     from PIL import ImageDraw
     imgnew = Image.new("RGBA", (width,height), (0,0,0,0))
-    imgnewdraw = ImageDraw.Draw(imgnew)
+    ImageDraw.Draw(imgnew)
     imgnew.save(output_png, mode="RGBA", format="PNG")
+
+class _GunInfosTextDict(TypedDict):
+    value: str
+    x: float
+    y: float
+    line_color: str
+    line: list[str]
+    align: NotRequired[str]
+    font_size_per_height: NotRequired[float]
+
+class _GunInfosDict(TypedDict):
+    texts: NotRequired[list[_GunInfosTextDict]]
+    font_size_per_height: NotRequired[float]
+    color: NotRequired[str]
+
+def png_to_png_with_texts(
+    input_png_path: Path,
+    output_png_path: Path,
+    data: _GunInfosDict,
+    /,
+    *,
+    font_path: Path,
+    width: int | None = None,
+    height: int | None = None,
+) -> None:
+    img_big = Image.open(input_png_path)
+    ratio = img_big.width / img_big.height
+
+    if width is None and height is None:
+        raise ValueError("width or height must be provided")
+
+    img_width: int = 0
+    img_height: int = 0
+
+    if width is None and height is not None:
+        img_height = height
+        img_width = int(height * ratio)
+
+    if width is not None and height is None:
+        img_width = width
+        img_height = int(width * ratio)
+
+    img = img_big.resize((img_width, img_height))
+    draw = ImageDraw.Draw(img)
+
+    # font
+    font = {}
+    if "font_size_per_height" in data:
+        font_size = int(data["font_size_per_height"]*img_height)
+        font[font_size] = ImageFont.truetype(font_path, font_size)
+
+    # lines
+    if "texts" in data:
+        for text in data["texts"]:
+            if "value" in text and text["value"] != "":
+                line_color = "black"
+                line_size  = 2
+                if "line_color" in text:
+                    line_color = text["line_color"]
+                if "line_size" in text:
+                    line_size = text["line_size"]
+                if "line" in text:
+                    points = []
+                    for i, v in enumerate(text["line"]):
+                        if i % 2 == 1:
+                            points.append((text["line"][i-1] * img_width, v * img_height))
+                    draw.line(points, fill=line_color, width=line_size)
+
+    # texts
+    if "texts" in data and "font_size_per_height" in data:
+        for text in data["texts"]:
+            if "x" in text and "y" in text and "value" in text:
+                # x, y
+                x = round(text["x"]*img_width)
+                y = round(text["y"]*img_height)
+
+                # color
+                color = "black"
+                if "color" in data:
+                    color = data["color"]
+                if "color" in text:
+                    color = text["color"]
+
+                # font
+                font_size = int(data["font_size_per_height"]*img_height)
+                if "font_size_per_height" in text:
+                    font_size = int(text["font_size_per_height"]*img_height)
+                    if font_size not in font:
+                        font[font_size] = ImageFont.truetype(font_path, font_size)
+
+                # alignment
+                text_width = draw.textlength(text["value"], font[font_size])
+                align = "left"
+                if "align" in text:
+                    align = text["align"]
+                if align == "center":
+                    x = x-int(text_width/2)
+                if align == "right":
+                    x = x-text_width
+                draw.text((x, y), text["value"], fill=color, font=font[font_size])
+
+    # save
+    img.save(output_png_path, "PNG")
+
+def gun_help_replace(text: str, replacements: Mapping[str, str]) -> str:
+    res = text
+    for r in replacements:
+        res = res.replace(r, replacements[r])
+    return res
+
+def generate_gun_help(
+    system: str,
+    rom: Path,
+    use_guns: bool,
+    guns: Guns,
+    gun_help_dir: Path,
+    gun_help_filename: str,
+    gameResolution: Resolution,
+    /,
+) -> None:
+    ttf = Path("/usr/share/fonts/dejavu/DejaVuSans.ttf")
+    img_ratio = 0.5 # ratio of the screen height
+    default_gun_help_path = gun_help_dir / "gun_help_default.png" # cache file for next game run
+    target_path = gun_help_dir / gun_help_filename
+
+    # default replacements
+    replacements = {
+        "<TRIGGER>": "TRIGGER",
+        "<ACTION>":  "ACTION",
+        "<START>":   "START",
+        "<SELECT>":  "SELECT",
+        "<SUB1>":    "SUB1",
+        "<SUB2>":    "SUB2",
+        "<SUB3>":    "SUB3",
+        "<UP>":      "UP",
+        "<DOWN>":    "DOWN",
+        "<LEFT>":    "LEFT",
+        "<RIGHT>":   "RIGHT",
+    }
+
+    if not gun_help_dir.exists():
+        gun_help_dir.mkdir(parents=True)
+
+    # customize texts ?
+    # use a gamesgunsbuttonsdb.xml to customize gun helps for each game
+    customize_texts = False
+
+    # search specific metadata
+    md = {}
+    if ES_GUNS_ART_METADATA.exists():
+        md = metadata.get_games_meta_data(ES_GUNS_ART_METADATA, system, rom)
+        for key in md:
+            if key.startswith("gun_"):
+                customize_texts = True
+        # if we customize text, we reset replacements by only the one in metadata
+        if customize_texts:
+            for key in replacements:
+                rkey = key[1:-1].lower() # remove the first, last char and lowercase
+                if "gun_"+rkey in md:
+                    replacements[key] = md["gun_"+rkey]
+                else:
+                    replacements[key] = "" # we replace by an empty string
+    else:
+        _logger.info("gun help: metadata file not found : %s", ES_GUNS_ART_METADATA)
+
+    # if we use the image without any customization, copy the backup
+    # we did of it to the destination
+    if (use_guns or guns) and not customize_texts and default_gun_help_path.exists():
+        shutil.copyfile(default_gun_help_path, target_path)
+        _logger.info("gun help: using cache image : %s", default_gun_help_path)
+        return
+
+    # remove any existing file
+    if target_path.exists():
+        target_path.unlink()
+
+    # don't enable if not a gun game or no gun
+    if not(use_guns and guns):
+        _logger.info("gun help: not generating gun help image")
+        return
+
+    _logger.info("gun help: generating gun help image")
+
+    # take the first gun
+    gun_name = guns[0].name
+    GUN_HELP_DIR = Path("/usr/share/batocera/guns-overlays")
+    GUN_HELP_PNG = GUN_HELP_DIR / Path(gun_name + ".png")
+    GUN_HELP_INFO = GUN_HELP_DIR / Path(gun_name + ".infos")
+
+    if not GUN_HELP_PNG.exists():
+        _logger.info("gun help: image doesn't exist : %s", GUN_HELP_PNG)
+        return
+
+    # try to open the help texts
+    data: _GunInfosDict = {}
+    if GUN_HELP_INFO.exists():
+        with GUN_HELP_INFO.open(encoding="utf-8") as file:
+            data = cast('_GunInfosDict', json.load(file))
+
+    # replace data in texts
+    if "texts" in data:
+        for n, _ in enumerate(data["texts"]):
+            data["texts"][n]["value"] = gun_help_replace(data["texts"][n]["value"], replacements)
+
+    img_height = int(gameResolution["height"] * img_ratio)
+    _logger.info("gun help: generating image %s", target_path)
+    png_to_png_with_texts(GUN_HELP_PNG, target_path, data, font_path=ttf, height=img_height)
+
+    # save the default help as a cache
+    if not customize_texts:
+        shutil.copyfile(target_path, default_gun_help_path)
+        _logger.info("gun help: caching file to : %s", default_gun_help_path)

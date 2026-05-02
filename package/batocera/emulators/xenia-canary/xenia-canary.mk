@@ -3,12 +3,14 @@
 # xenia-canary
 #
 ################################################################################
-# Version: Commits on Nov 4, 2024
-XENIA_CANARY_SOURCE = xenia_canary.zip
-XENIA_CANARY_VERSION = fbad66e
-XENIA_CANARY_SITE = https://github.com/xenia-canary/xenia-canary/releases/download/$(XENIA_CANARY_VERSION)
+# Version: Commits on December 4, 2025
+XENIA_CANARY_SOURCE = xenia_canary_windows.zip
+XENIA_CANARY_VERSION = f85f4c3
+XENIA_CANARY_SITE = \
+    https://github.com/xenia-canary/xenia-canary-releases/releases/download/$(XENIA_CANARY_VERSION)
 XENIA_CANARY_LICENSE = BSD
 XENIA_CANARY_LICENSE_FILE = LICENSE
+XENIA_CANARY_EMULATOR_INFO = xenia-canary.emulator.yml
 
 XENIA_CANARY_DEPENDENCIES = python-toml
 
@@ -39,16 +41,13 @@ define XENIA_CANARY_POST_PROCESS
 	  $(GIT) pull --depth=1 origin main && \
 	  mv -f patches/*.toml $(TARGET_DIR)/usr/xenia-canary/patches \
 	)
-	
+
 	# Clean up the temporary directory
 	rm -rf $(@D)/temp
-
-	mkdir -p $(TARGET_DIR)/usr/share/evmapy
-	cp $(BR2_EXTERNAL_BATOCERA_PATH)/package/batocera/emulators/xenia-canary/xbox360.xenia-canary.keys \
-	    $(TARGET_DIR)/usr/share/evmapy
 endef
 
 XENIA_CANARY_PRE_DOWNLOAD_HOOKS = XENIA_CANARY_CLEAR_DL
 XENIA_CANARY_POST_INSTALL_TARGET_HOOKS = XENIA_CANARY_POST_PROCESS
 
 $(eval $(generic-package))
+$(eval $(emulator-info-package))
